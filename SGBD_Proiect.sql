@@ -1,0 +1,1444 @@
+-- Tache Daria Elena
+-- Grupa 234
+
+
+/*
+CREATE OR REPLACE PACKAGE happy_puppy AS
+    --seq_centreID;
+	--seq_petID;
+	--seq_id_fisa;
+	--seq_nrC;
+	--seq_id_prog;
+	--seq_id_tur;
+	--seq_id_donatie;
+	--seq_id_contract;
+	--seq_id_angajat;
+    PROCEDURE Exercitiul6;
+    PROCEDURE CalculSumaDonatii;
+	PROCEDURE ProgramareTur;
+
+
+END happy_puppy;
+/
+
+CREATE OR REPLACE PACKAGE BODY happy_puppy AS
+
+CREATE SEQUENCE seq_centreID 
+    INCREMENT BY 1 
+    START WITH 100 
+    MINVALUE 1 
+    MAXVALUE 5000 
+    NOCYCLE;
+
+
+CREATE SEQUENCE seq_petID 
+	INCREMENT BY 1 
+	START WITH 1400 
+	MINVALUE 1 
+	MAXVALUE 250000 
+	NOCYCLE;
+
+    
+CREATE SEQUENCE seq_id_fisa 
+    START WITH 1 
+    INCREMENT BY 1 
+    NOCYCLE 
+    CACHE 40;
+
+CREATE SEQUENCE seq_nrC 
+    INCREMENT BY 1 
+    START WITH 1 
+    MINVALUE 1 
+    MAXVALUE 5000 
+    NOCYCLE;
+
+
+CREATE SEQUENCE seq_id_prog 
+    INCREMENT BY 1 
+    START WITH 1200 
+    MINVALUE 1 
+    MAXVALUE 50000 
+    NOCYCLE;
+
+
+CREATE SEQUENCE seq_id_tur 
+    INCREMENT BY 1 
+    START WITH 1 
+    MINVALUE 1 
+    MAXVALUE 50000 
+    NOCYCLE;
+
+
+CREATE SEQUENCE seq_id_donatie 
+    INCREMENT BY 1 
+    START WITH 400 
+    MINVALUE 1 
+    MAXVALUE 50000 
+    NOCYCLE;
+
+
+CREATE SEQUENCE seq_id_contract 
+    INCREMENT BY 1 
+    START WITH 250 
+    MINVALUE 1 
+    MAXVALUE 50000 
+    NOCYCLE;
+
+
+CREATE SEQUENCE seq_id_angajat
+START WITH 250
+INCREMENT BY 1
+NOCACHE
+NOCYCLE;
+
+
+
+    
+CREATE OR REPLACE PROCEDURE Exercitiul6 IS
+    TYPE DonatieType IS TABLE OF NUMBER INDEX BY PLS_INTEGER;
+    TYPE VizitaType IS TABLE OF NUMBER;
+    TYPE AdoptieType IS VARRAY(50) OF NUMBER;
+
+	TYPE DetaliiType IS RECORD (
+        nume CLIENT.nume%TYPE,
+        prenume CLIENT.prenume%TYPE
+    );
+
+    v_detalii DetaliiType;
+
+    v_donatii DonatieType;
+    v_vizite VizitaType := VizitaType();
+    v_adoptii AdoptieType := AdoptieType();
+
+	v_nrC NUMBER;
+
+    v_star_clients NUMBER := 0;
+BEGIN
+    
+    SELECT DISTINCT nrC
+    BULK COLLECT INTO v_donatii
+    FROM DONATIE;
+
+    FOR i IN (SELECT DISTINCT nrC FROM PROGRAMARE_VIZITA) LOOP
+        v_vizite.EXTEND;
+        v_vizite(v_vizite.LAST) := i.nrC;
+    END LOOP;
+
+	 FOR i IN (SELECT DISTINCT nrC FROM CONTRACT_ADOPTIE) LOOP
+        v_adoptii.EXTEND;
+        v_adoptii(v_adoptii.LAST) := i.nrC;
+     END LOOP;
+    
+    FOR i IN (SELECT DISTINCT nrC FROM CLIENT) LOOP
+        v_nrC := i.nrC;
+
+        -- Vedem daca nrC exista in toate cele trei colectii
+        IF v_donatii.EXISTS(v_nrC) AND v_vizite.EXISTS(v_nrC) AND v_adoptii.EXISTS(v_nrC) THEN
+            
+            SELECT nume, prenume INTO v_detalii.nume, v_detalii.prenume
+			FROM CLIENT
+			WHERE nrC = v_nrC;
+
+			DBMS_OUTPUT.PUT_LINE('Client ' || v_nrC || ', ' || v_detalii.nume || ' ' || v_detalii.prenume ||' este un Star Client!');
+
+            v_star_clients := v_star_clients + 1;
+        END IF;
+    END LOOP;
+
+    DBMS_OUTPUT.PUT_LINE('Numar total de Star Clients: ' || v_star_clients);
+END Exercitiul6;
+/
+
+
+
+
+
+
+CREATE OR REPLACE PROCEDURE CalculSumaDonatii IS
+    -- Cursorul implicit pentru Centre
+    CURSOR centru_cursor IS
+        SELECT id_centru, adresa FROM CENTRU;
+
+    -- Cursorul pentru Donatii
+    CURSOR donatie_cursor (p_id_centru_donatie NUMBER) IS
+        SELECT suma FROM DONATIE
+        WHERE id_centru = p_id_centru_donatie;
+
+    v_id_centru CENTRU.id_centru%TYPE;
+    v_adresa_centru CENTRU.adresa%TYPE;
+    v_suma_totala NUMBER := 0;
+    v_suma_donatie NUMBER;
+BEGIN
+    OPEN centru_cursor;
+    LOOP
+        FETCH centru_cursor INTO v_id_centru, v_adresa_centru;
+        EXIT WHEN centru_cursor%NOTFOUND;
+
+        OPEN donatie_cursor(v_id_centru);
+        LOOP
+            FETCH donatie_cursor INTO v_suma_donatie;
+            EXIT WHEN donatie_cursor%NOTFOUND;
+
+            v_suma_totala := v_suma_totala + v_suma_donatie;
+        END LOOP;
+        CLOSE donatie_cursor;
+
+        DBMS_OUTPUT.PUT_LINE('Centrul cu adresa: ' || v_adresa_centru);
+        DBMS_OUTPUT.PUT_LINE('Suma totala donata: ' || v_suma_totala);
+        
+        v_suma_totala := 0;
+    END LOOP;
+    CLOSE centru_cursor;
+END CalculSumaDonatii;
+/
+
+
+
+
+
+
+CREATE OR REPLACE PROCEDURE ProgramareTur(
+    p_nume CLIENT.nume%TYPE,
+    p_prenume CLIENT.prenume%TYPE,
+    p_telefon CLIENT.telefon%TYPE,
+    p_id_centru NUMBER,
+    p_nr_persoane PROGRAMARE_VIZITA.nr_pers%TYPE,
+    p_ora_inceput NUMBER,
+    p_ora_final NUMBER
+) IS
+    v_nrC CLIENT.nrC%TYPE;
+    v_id_prog PROGRAMARE_VIZITA.id_prog%TYPE;
+    v_data_tur TUR.data_tur%TYPE;
+    v_durata_tur NUMBER;
+	v_aux VARCHAR(20);
+	v_verif NUMBER;
+	
+
+	FORMAT_INVALID EXCEPTION;
+	PRAGMA EXCEPTION_INIT(FORMAT_INVALID, -2292);
+
+	DURATA_DEPASITA EXCEPTION;
+	PRAGMA EXCEPTION_INIT(DURATA_DEPASITA, -2293);
+
+BEGIN
+	
+	-- Verificam daca centrul exista
+	SELECT 1
+    INTO v_verif
+    FROM CENTRU
+    WHERE id_centru = p_id_centru;
+    
+
+	BEGIN
+    	-- Se verifică dacă clientul există deja în tabelul CLIENT
+    	SELECT nrC INTO v_nrC
+    	FROM CLIENT
+    	WHERE nume = p_nume AND prenume = p_prenume AND telefon = p_telefon;
+
+		EXCEPTION
+		WHEN NO_DATA_FOUND THEN
+			v_nrC := seq_nrC.NEXTVAL;
+			INSERT INTO CLIENT(nrC, nume, prenume, telefon)
+        	VALUES (v_nrC, p_nume, p_prenume, p_telefon);
+
+	END;
+
+    IF p_ora_inceput > p_ora_final THEN
+        RAISE FORMAT_INVALID;
+    END IF;
+
+    v_durata_tur := p_ora_final - p_ora_inceput;
+
+    IF v_durata_tur > 3 THEN
+        RAISE DURATA_DEPASITA;
+    END IF;
+
+    v_id_prog := seq_id_prog.NEXTVAL;
+
+    INSERT INTO PROGRAMARE_VIZITA(id_prog, nrC, nr_pers)
+    VALUES (v_id_prog, v_nrC, p_nr_persoane);
+
+	v_aux := TO_CHAR(p_ora_inceput) || '-' || TO_CHAR(p_ora_final);
+
+    INSERT INTO TUR(id_prog, id_centru, data_tur, interval_orar)
+    VALUES (v_id_prog, p_id_centru, SYSDATE, v_aux);
+
+    DBMS_OUTPUT.PUT_LINE('Programare pentru tur realizată cu succes!');
+
+EXCEPTION
+    WHEN NO_DATA_FOUND THEN
+            DBMS_OUTPUT.PUT_LINE('Id_centru NU există în tabela CENTRU.');
+    WHEN FORMAT_INVALID THEN
+        DBMS_OUTPUT.PUT_LINE('Eroare: ' || 'Ora de final nu poate fi precedentă orei de început.');
+    WHEN DURATA_DEPASITA THEN
+        DBMS_OUTPUT.PUT_LINE('Eroare: ' || 'Durata turului nu poate depăși 3 ore.');
+    WHEN OTHERS THEN
+        DBMS_OUTPUT.PUT_LINE('Eroare necunoscută. ' || SQLCODE);
+
+END;
+/
+
+
+
+
+
+CREATE OR REPLACE PROCEDURE Exercitiul9(
+    p_nume_client IN VARCHAR2,
+    p_prenume_client IN VARCHAR2,
+    p_telefon_client IN VARCHAR2,
+    p_adresa_client IN VARCHAR2,
+    p_email_client IN VARCHAR2,
+    p_id_centru IN NUMBER
+) AS
+    v_nrC CLIENT.nrC%TYPE;
+    v_petID ANIMAL_COMPANIE.petID%TYPE;
+    v_id_contract CONTRACT_ADOPTIE.id_contract%TYPE;
+	v_count NUMBER;
+	
+BEGIN
+
+    
+    	SELECT COUNT(*)
+    	INTO v_count
+    	FROM ANIMAL_COMPANIE
+    	WHERE id_centru = p_id_centru;
+
+    	IF v_count = 0 THEN
+        	RAISE_APPLICATION_ERROR(-20001, 'Nu s-au găsit animale de companie în centrul specificat.');
+    	END IF;
+
+		SELECT seq_nrC.NEXTVAL INTO v_nrC FROM DUAL;
+
+        INSERT INTO CLIENT(nrC, nume, prenume, telefon, adresa, email)
+        VALUES (v_nrC, p_nume_client, p_prenume_client, p_telefon_client, p_adresa_client, p_email_client);
+    
+
+    SELECT petID INTO v_petID
+    FROM (
+        SELECT ac.petID
+        FROM ANIMAL_COMPANIE ac
+        JOIN FISA_AC fa ON ac.id_fisa = fa.id_fisa -- join pe cheia id_fisa
+        WHERE ac.id_centru = p_id_centru
+        ORDER BY fa.varsta DESC, ac.data_preluare ASC -- ord după varsta descendent și data_preluare ascendent (pentru stabilitate)
+    )
+    WHERE ROWNUM = 1;
+
+
+    SELECT seq_id_contract.NEXTVAL INTO v_id_contract FROM DUAL;
+
+    INSERT INTO CONTRACT_ADOPTIE(id_contract, petID, nrC, data_adoptie)
+    VALUES (v_id_contract, v_petID, v_nrC, SYSDATE);
+
+    DBMS_OUTPUT.PUT_LINE('Contract de adoptie creat cu succes pentru clientul ' || p_nume_client || ' ' || p_prenume_client || ' si animalul de companie cu ID-ul ' || v_petID);
+EXCEPTION
+    WHEN TOO_MANY_ROWS THEN
+        DBMS_OUTPUT.PUT_LINE('Eroare: Prea multe rânduri returnate în subinterogare.');
+    WHEN OTHERS THEN
+        DBMS_OUTPUT.PUT_LINE('Eroare: ' || SQLERRM);
+END;
+/
+
+
+
+END happy_puppy;
+/
+
+*/
+
+
+
+
+
+CREATE TABLE FISA_AC ( 
+    id_fisa NUMBER PRIMARY KEY, 
+    specie VARCHAR2(50), 
+    rasa VARCHAR2(100), 
+    sex CHAR(1), 
+    varsta NUMBER
+);
+
+CREATE TABLE CARNET_MEDICAL( 
+    id_fisa NUMBER, 
+    vaccin VARCHAR2(500), 
+    stare_sterilizare CHAR(3) CHECK (UPPER(stare_sterilizare) IN ('DA', 'NU')), 
+    deparazitare CHAR(4) CHECK (UPPER(deparazitare) IN ('DA', 'NU')), 
+    mentiuni VARCHAR2(500), 
+    PRIMARY KEY(id_fisa), 
+    FOREIGN KEY(id_fisa) REFERENCES FISA_AC(id_fisa) 
+);
+
+CREATE TABLE CENTRU ( 
+    id_centru NUMBER PRIMARY KEY, 
+    adresa VARCHAR2(200), 
+    nr_tel VARCHAR2(20), 
+    program VARCHAR2(200), 
+    nr_animale_companie NUMBER 
+); 
+
+CREATE TABLE ANIMAL_COMPANIE ( 
+    petID NUMBER PRIMARY KEY, 
+    id_centru NUMBER, 
+    id_fisa NUMBER, 
+    data_preluare DATE, 
+    adoptat CHAR(4) CHECK (UPPER(adoptat) IN ('DA', 'NU')),
+    FOREIGN KEY (id_centru) REFERENCES CENTRU(id_centru), 
+    FOREIGN KEY (id_fisa) REFERENCES FISA_AC(id_fisa) 
+);
+
+CREATE TABLE CLIENT( 
+    nrC NUMBER PRIMARY KEY, 
+    nume VARCHAR2(20), 
+    prenume VARCHAR2(50), 
+    telefon VARCHAR2(20), 
+    adresa VARCHAR2(200), 
+    email VARCHAR2(50) 
+);
+
+CREATE TABLE PROGRAMARE_VIZITA( 
+    id_prog NUMBER PRIMARY KEY, 
+    nrC NUMBER NOT NULL, 
+    nr_pers NUMBER, 
+    FOREIGN KEY (nrC) REFERENCES CLIENT (nrC) 
+);
+
+CREATE TABLE TUR( 
+    id_prog NUMBER, 
+    id_centru NUMBER, 
+    data_tur DATE, 
+    interval_orar VARCHAR2(50), 
+    PRIMARY KEY(id_prog, id_centru), 
+    FOREIGN KEY(id_prog) REFERENCES PROGRAMARE_VIZITA(id_prog), 
+    FOREIGN KEY (id_centru) REFERENCES CENTRU(id_centru) 
+);
+
+CREATE TABLE DONATIE( 
+    id_donatie NUMBER PRIMARY KEY, 
+    id_centru NUMBER, 
+    nrC NUMBER, 
+    data_donatie DATE, 
+    suma NUMBER, 
+    FOREIGN KEY(id_centru) REFERENCES CENTRU(id_centru), 
+    FOREIGN KEY(nrC) REFERENCES CLIENT(nrC) 
+);
+
+CREATE TABLE CONTRACT_ADOPTIE( 
+    id_contract NUMBER PRIMARY KEY, 
+    petID NUMBER, 
+    nrC NUMBER, 
+    data_adoptie DATE, 
+    FOREIGN KEY (petID) REFERENCES ANIMAL_COMPANIE(petID), 
+    FOREIGN KEY (nrC) REFERENCES CLIENT(nrC) 
+);
+
+CREATE TABLE ANGAJAT( 
+    id_angajat NUMBER PRIMARY KEY, 
+    id_centru NUMBER, 
+    nume VARCHAR2(20), 
+    prenume VARCHAR2(50), 
+    telefon VARCHAR2(20), 
+    data_angajare DATE, 
+    ore_saptamana NUMBER, 
+    salariu NUMBER, 
+    FOREIGN KEY (id_centru) REFERENCES CENTRU(id_centru) 
+);
+
+CREATE SEQUENCE seq_centreID 
+    INCREMENT BY 1 
+    START WITH 100 
+    MINVALUE 1 
+    MAXVALUE 5000 
+    NOCYCLE;
+
+
+CREATE SEQUENCE seq_petID 
+	INCREMENT BY 1 
+	START WITH 1400 
+	MINVALUE 1 
+	MAXVALUE 250000 
+	NOCYCLE;
+
+    
+CREATE SEQUENCE seq_id_fisa 
+    START WITH 1 
+    INCREMENT BY 1 
+    NOCYCLE 
+    CACHE 40;
+
+
+INSERT INTO CENTRU  
+    (id_centru, adresa, nr_tel, program, nr_animale_companie) 
+VALUES 
+    (seq_centreID.NEXTVAL, 'Str Alexandru cel Mare, 21', '0726248310', '08:00 - 18:00', 0 );
+
+INSERT INTO CENTRU 
+    (id_centru, adresa, nr_tel, program, nr_animale_companie) 
+VALUES 
+    (seq_centreID.NEXTVAL, 'Strada Victoriei, 10', '0723123456', '09:00 - 19:00', 0);
+
+INSERT INTO CENTRU 
+    (id_centru, adresa, nr_tel, program, nr_animale_companie) 
+VALUES 
+    (seq_centreID.NEXTVAL, 'Bulevardul Independenței, 5', '0732112233', '10:00 - 20:00', 0);
+
+INSERT INTO CENTRU 
+    (id_centru, adresa, nr_tel, program, nr_animale_companie) 
+VALUES 
+    (seq_centreID.NEXTVAL, 'Strada Aviatorilor, 15', '0712345678', '08:30 - 18:30', 0);
+
+INSERT INTO CENTRU 
+    (id_centru, adresa, nr_tel, program, nr_animale_companie) 
+VALUES 
+    (seq_centreID.NEXTVAL, 'Bulevardul Dacia, 8', '0755555555', '10:30 - 20:30', 0);
+
+
+DECLARE
+
+    TYPE SpeciiType IS TABLE OF VARCHAR2(20);
+    TYPE VarstaType IS TABLE OF NUMBER;
+    TYPE RaseType IS TABLE OF VARCHAR2(50);
+    TYPE CheckType IS TABLE OF VARCHAR2(3);
+    TYPE MentiuniType IS TABLE OF VARCHAR2(20);
+    TYPE GenderType IS TABLE OF VARCHAR2(3);
+    TYPE VaccinType IS TABLE OF VARCHAR(20);
+    TYPE DatePreluareType IS TABLE OF DATE INDEX BY PLS_INTEGER;
+
+
+    v_specii SpeciiType := SpeciiType('Caine', 'Pisica', 'Iepure', 'Hamster', 'Papagal');
+    v_varsta VarstaType := VarstaType(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12);
+    v_rase_caine RaseType := RaseType('Labrador', 'Ciobanesc German', 'Bullog');
+    v_rase_pisica RaseType := RaseType('Siameza', 'Albastru de Rusia', 'British Shorthair');
+    v_rase_iepure RaseType := RaseType('Pitic', 'Belier');
+    v_rase_hamster RaseType := RaseType('Pitic Roborovsky');
+    v_check CheckType := CheckType('DA', 'NU');
+    v_mentiuni MentiuniType := MentiuniType('Nicio mentiune', 'Are alergii', 'Iubitor');
+    v_gender GenderType := GenderType('F', 'M');
+    v_vaccin VaccinType := VaccinType('Vaccin A', 'Vaccin B', 'Vaccin C', 'Vaccin D');
+    v_date_preluare DatePreluareType;
+
+    v_nr_specii CONSTANT NUMBER := v_specii.COUNT;
+    v_nr_rase_caine CONSTANT NUMBER := v_rase_caine.COUNT;
+    v_nr_rase_pisica CONSTANT NUMBER := v_rase_pisica.COUNT;
+    v_nr_rase_iepure CONSTANT NUMBER := v_rase_iepure.COUNT;
+    v_nr_rase_hamster CONSTANT NUMBER := v_rase_hamster.COUNT;
+    v_nr_check CONSTANT NUMBER := v_check.COUNT;
+    v_nr_mentiuni CONSTANT NUMBER := v_mentiuni.COUNT;
+    v_nr_gender CONSTANT NUMBER := v_gender.COUNT;
+    v_nr_vaccin CONSTANT NUMBER := v_vaccin.COUNT;
+
+    v_random_specie VARCHAR2(20);
+    v_random_varsta NUMBER;
+    v_random_rasa VARCHAR2(50);
+    v_random_check1 VARCHAR2(3);
+    v_random_check2 VARCHAR2(3);
+    v_random_mentiune VARCHAR2(20);
+    v_random_gender VARCHAR(3);
+    v_random_vaccin VARCHAR(20);
+
+    v_random_data DATE;
+
+    v_counter NUMBER := 0;
+
+    v_id_fisa NUMBER;
+    v_id_centru NUMBER;
+    v_petID NUMBER;
+    v_nr_centre NUMBER;
+    v_centru_curent NUMBER;
+BEGIN
+    
+    -- Introduc date in tabel:
+    v_date_preluare(1) := TO_DATE('2023-01-01', 'YYYY-MM-DD');
+    v_date_preluare(2) := TO_DATE('2023-02-15', 'YYYY-MM-DD');
+    v_date_preluare(3) := TO_DATE('2023-03-10', 'YYYY-MM-DD');
+    v_date_preluare(4) := TO_DATE('2023-04-22', 'YYYY-MM-DD');
+    v_date_preluare(5) := TO_DATE('2023-05-05', 'YYYY-MM-DD');
+    v_date_preluare(6) := TO_DATE('2023-06-18', 'YYYY-MM-DD');
+    v_date_preluare(7) := TO_DATE('2023-07-03', 'YYYY-MM-DD');
+    v_date_preluare(8) := TO_DATE('2023-08-14', 'YYYY-MM-DD');
+    v_date_preluare(9) := TO_DATE('2023-09-27', 'YYYY-MM-DD');
+    v_date_preluare(10) := TO_DATE('2023-10-09', 'YYYY-MM-DD');
+
+    SELECT COUNT(*) INTO v_nr_centre FROM CENTRU;
+
+    
+    WHILE v_counter < 16 LOOP
+        
+        SELECT id_centru INTO v_centru_curent FROM CENTRU WHERE ROWNUM = 1 ORDER BY DBMS_RANDOM.VALUE; 
+
+        v_id_fisa := seq_id_fisa.NEXTVAL;
+
+        v_petID := seq_petID.NEXTVAL;
+
+        v_random_specie := v_specii(DBMS_RANDOM.VALUE(1, v_nr_specii));
+        
+        -- Alegere aleatoare pentru rasa in functie de specie
+        CASE v_random_specie
+            WHEN 'Caine' THEN v_random_rasa := v_rase_caine(DBMS_RANDOM.VALUE(1, v_nr_rase_caine));
+            WHEN 'Pisica' THEN v_random_rasa := v_rase_pisica(DBMS_RANDOM.VALUE(1, v_nr_rase_pisica));
+            WHEN 'Iepure' THEN v_random_rasa := v_rase_iepure(DBMS_RANDOM.VALUE(1, v_nr_rase_iepure));
+            WHEN 'Hamster' THEN v_random_rasa := v_rase_hamster(DBMS_RANDOM.VALUE(1, v_nr_rase_hamster));
+            ELSE v_random_rasa := NULL;
+        END CASE;
+
+        -- Alegere aleatoare pentru Check, Varsta, Gender, Vaccin, Mentiuni si Data
+        v_random_check1 := v_check(DBMS_RANDOM.VALUE(1, v_nr_check));
+        v_random_check2 := v_check(DBMS_RANDOM.VALUE(1, v_nr_check));
+        v_random_varsta := v_varsta(DBMS_RANDOM.VALUE(1,12));
+        v_random_gender := v_gender(DBMS_RANDOM.VALUE(1, v_nr_gender));
+        v_random_vaccin := v_vaccin(DBMS_RANDOM.VALUE(1, v_nr_vaccin));
+        v_random_mentiune := v_mentiuni(DBMS_RANDOM.VALUE(1, v_nr_mentiuni));
+        v_random_data := v_date_preluare(DBMS_RANDOM.VALUE(1,10));
+
+        INSERT INTO FISA_AC
+            (id_fisa, specie, rasa, sex, varsta)
+        VALUES
+            (v_id_fisa, v_random_specie, v_random_rasa, v_random_gender, v_random_varsta);
+
+        INSERT INTO CARNET_MEDICAL 
+            (id_fisa, vaccin, stare_sterilizare, deparazitare, mentiuni) 
+        VALUES 
+            (v_id_fisa, v_random_vaccin, v_random_check1, v_random_check2, v_random_mentiune);
+
+        INSERT INTO ANIMAL_COMPANIE
+            (petID, id_centru, id_fisa, data_preluare, adoptat)
+        VALUES
+            (v_petID, v_centru_curent, v_id_fisa, v_random_data, 'NU');
+
+        -- După inserarea în ANIMAL_COMPANIE
+        UPDATE CENTRU
+        SET nr_animale_companie = nr_animale_companie + 1
+        WHERE id_centru = v_centru_curent;
+
+        v_counter := v_counter + 1;
+    END LOOP;
+END;
+/
+
+    select * from centru;
+
+CREATE SEQUENCE seq_nrC 
+    INCREMENT BY 1 
+    START WITH 1 
+    MINVALUE 1 
+    MAXVALUE 5000 
+    NOCYCLE;
+
+INSERT INTO CLIENT 
+    (nrC, nume, prenume, telefon, adresa, email) 
+VALUES 
+    (seq_nrC.NEXTVAL, 'Popescu', 'Ana', '0723123456', 'Str. Libertății 123', 'ana.popescu@example.com');
+
+INSERT INTO CLIENT 
+    (nrC, nume, prenume, telefon, adresa, email) 
+VALUES 
+    (seq_nrC.NEXTVAL, 'Ionescu', 'Mihai', '0734567890', 'Str. Victoriei 456', 'mihai.ionescu@example.com');
+
+INSERT INTO CLIENT 
+    (nrC, nume, prenume, telefon, adresa, email) 
+VALUES 
+    (seq_nrC.NEXTVAL, 'Georgescu', 'Elena', '0712345678', 'Str. Aviatorilor 789', 'elena.georgescu@example.com');
+
+INSERT INTO CLIENT 
+    (nrC, nume, prenume, telefon, adresa, email) 
+VALUES 
+    (seq_nrC.NEXTVAL, 'Popa', 'Ion', '0722334455', 'Str. Unirii 567', 'ion.popa@example.com');
+
+INSERT INTO CLIENT 
+    (nrC, nume, prenume, telefon, adresa, email) 
+VALUES 
+    (seq_nrC.NEXTVAL, 'Radu', 'Maria', '0744445555', 'Str. Dacia 789', 'maria.radu@example.com');
+
+INSERT INTO CLIENT 
+    (nrC, nume, prenume, telefon, adresa, email) 
+VALUES 
+    (seq_nrC.NEXTVAL, 'Stoica', 'Alexandru', '0733666777', 'Str. Plopilor 234', 'alexandru.stoica@example.com');
+
+INSERT INTO CLIENT 
+    (nrC, nume, prenume, telefon, adresa, email) 
+VALUES 
+    (seq_nrC.NEXTVAL, 'Constantin', 'Andreea', '0722112233', 'Str. Mihai Viteazu 456', 'andreea.constantin@example.com');
+
+CREATE SEQUENCE seq_id_prog 
+    INCREMENT BY 1 
+    START WITH 1200 
+    MINVALUE 1 
+    MAXVALUE 50000 
+    NOCYCLE;
+
+DECLARE 
+    v_id_prog NUMBER; 
+    v_nrC NUMBER; 
+BEGIN 
+    FOR i IN 1..11 LOOP 
+         
+        INSERT INTO CLIENT 
+            (nrC, nume, prenume, telefon, adresa, email) 
+        VALUES 
+            (seq_nrC.NEXTVAL, 'Nume' || i, 'Prenume' || i, '0721' || LPAD(i, 7, '0'), 'Adresa' || i, 'email' || i || '@exemplu.com'); 
+ 
+        v_nrC := seq_nrC.CURRVAL; 
+ 
+        INSERT INTO PROGRAMARE_VIZITA 
+            (id_prog, nrC, nr_pers) 
+        VALUES 
+            (seq_id_prog.NEXTVAL, v_nrC, i); 
+    END LOOP; 
+END; 
+/
+
+DECLARE 
+    v_id_prog NUMBER; 
+    v_nrC NUMBER; 
+BEGIN 
+	SELECT nrC INTO v_nrC FROM CLIENT WHERE ROWNUM = 1 ORDER BY DBMS_RANDOM.VALUE; 
+    v_id_prog := seq_id_prog.NEXTVAL; 
+ 
+	INSERT INTO PROGRAMARE_VIZITA 
+    	(id_prog,  nrC, nr_pers) 
+	VALUES 
+    	(seq_id_prog.NEXTVAL, v_nrC, 6); 
+     
+END; 
+/
+
+DECLARE 
+    v_id_prog NUMBER; 
+    v_nrC NUMBER; 
+BEGIN 
+	SELECT nrC INTO v_nrC FROM CLIENT WHERE ROWNUM = 1 ORDER BY DBMS_RANDOM.VALUE; 
+    v_id_prog := seq_id_prog.NEXTVAL; 
+ 
+	INSERT INTO PROGRAMARE_VIZITA 
+    	(id_prog,  nrC, nr_pers) 
+	VALUES 
+    	(seq_id_prog.NEXTVAL, v_nrC, 8); 
+     
+END; 
+/
+
+DECLARE 
+    v_id_prog NUMBER; 
+    v_nrC NUMBER; 
+BEGIN 
+	SELECT nrC INTO v_nrC FROM CLIENT WHERE ROWNUM = 1 ORDER BY DBMS_RANDOM.VALUE; 
+    v_id_prog := seq_id_prog.NEXTVAL; 
+ 
+	INSERT INTO PROGRAMARE_VIZITA 
+    	(id_prog,  nrC, nr_pers) 
+	VALUES 
+    	(seq_id_prog.NEXTVAL, v_nrC, 4); 
+     
+END; 
+/
+
+CREATE SEQUENCE seq_id_tur 
+    INCREMENT BY 1 
+    START WITH 1 
+    MINVALUE 1 
+    MAXVALUE 50000 
+    NOCYCLE;
+
+DECLARE 
+    v_id_centru NUMBER; 
+     
+BEGIN 
+	SELECT id_centru INTO v_id_centru FROM CENTRU WHERE ROWNUM = 1 ORDER BY DBMS_RANDOM.VALUE; 
+ 
+    INSERT INTO TUR 
+        (id_prog, id_centru, data_tur, interval_orar) 
+    VALUES 
+        (1201, v_id_centru, TO_DATE('2021-03-09', 'YYYY-MM-DD'), '08:00 - 13:00'); 
+     
+END; 
+/
+
+DECLARE 
+    v_id_centru NUMBER; 
+     
+BEGIN 
+	SELECT id_centru INTO v_id_centru FROM CENTRU WHERE ROWNUM = 1 ORDER BY DBMS_RANDOM.VALUE; 
+ 
+    INSERT INTO TUR 
+        (id_prog, id_centru, data_tur, interval_orar) 
+    VALUES 
+        (1203, v_id_centru, TO_DATE('2021-03-09', 'YYYY-MM-DD'), '08:00 - 13:00'); 
+     
+END; 
+/
+
+DECLARE 
+    v_id_centru NUMBER; 
+     
+BEGIN 
+	SELECT id_centru INTO v_id_centru FROM CENTRU WHERE ROWNUM = 1 ORDER BY DBMS_RANDOM.VALUE; 
+ 
+    INSERT INTO TUR 
+        (id_prog, id_centru, data_tur, interval_orar) 
+    VALUES 
+        (1206, v_id_centru, TO_DATE('2021-03-09', 'YYYY-MM-DD'), '08:00 - 13:00'); 
+     
+END; 
+/
+
+DECLARE 
+    v_id_centru NUMBER; 
+     
+BEGIN 
+	SELECT id_centru INTO v_id_centru FROM CENTRU WHERE ROWNUM = 1 ORDER BY DBMS_RANDOM.VALUE; 
+ 
+    INSERT INTO TUR 
+        (id_prog, id_centru, data_tur, interval_orar) 
+    VALUES 
+        (1200, v_id_centru, TO_DATE('2021-03-09', 'YYYY-MM-DD'), '08:00 - 13:00'); 
+     
+END; 
+/
+
+DECLARE 
+    v_id_centru NUMBER; 
+     
+BEGIN 
+	SELECT id_centru INTO v_id_centru FROM CENTRU WHERE ROWNUM = 1 ORDER BY DBMS_RANDOM.VALUE; 
+ 
+    INSERT INTO TUR 
+        (id_prog, id_centru, data_tur, interval_orar) 
+    VALUES 
+        (1205, v_id_centru, TO_DATE('2021-03-09', 'YYYY-MM-DD'), '08:00 - 13:00'); 
+     
+END; 
+/
+
+DECLARE 
+    v_id_centru NUMBER; 
+     
+BEGIN 
+	SELECT id_centru INTO v_id_centru FROM CENTRU WHERE ROWNUM = 1 ORDER BY DBMS_RANDOM.VALUE; 
+ 
+    INSERT INTO TUR 
+        (id_prog, id_centru, data_tur, interval_orar) 
+    VALUES 
+        (1202, v_id_centru, TO_DATE('2021-03-09', 'YYYY-MM-DD'), '08:00 - 13:00'); 
+     
+END; 
+/
+
+DECLARE 
+    v_id_centru NUMBER; 
+     
+BEGIN 
+	SELECT id_centru INTO v_id_centru FROM CENTRU WHERE ROWNUM = 1 ORDER BY DBMS_RANDOM.VALUE; 
+ 
+    INSERT INTO TUR 
+        (id_prog, id_centru, data_tur, interval_orar) 
+    VALUES 
+        (1204, v_id_centru, TO_DATE('2021-03-09', 'YYYY-MM-DD'), '08:00 - 13:00'); 
+     
+END; 
+/
+
+CREATE SEQUENCE seq_id_donatie 
+    INCREMENT BY 1 
+    START WITH 400 
+    MINVALUE 1 
+    MAXVALUE 50000 
+    NOCYCLE;
+
+DECLARE 
+    v_id_donatie NUMBER; 
+    v_id_centru NUMBER; 
+    v_nrC NUMBER; 
+BEGIN 
+	SELECT id_centru INTO v_id_centru FROM CENTRU WHERE ROWNUM = 1 ORDER BY DBMS_RANDOM.VALUE; 
+	SELECT nrC INTO v_nrC FROM CLIENT WHERE ROWNUM = 1 ORDER BY DBMS_RANDOM.VALUE; 
+    v_id_donatie := seq_id_donatie.NEXTVAL; 
+ 
+	INSERT INTO DONATIE 
+    	(id_donatie, id_centru, nrC, data_donatie, suma) 
+	VALUES 
+    	(seq_id_donatie.NEXTVAL, v_id_centru, v_nrC, TO_DATE('2022-09-30', 'YYYY-MM-DD'), 45); 
+    END; 
+/
+
+DECLARE 
+    v_id_donatie NUMBER; 
+    v_id_centru NUMBER; 
+    v_nrC NUMBER; 
+BEGIN 
+	SELECT id_centru INTO v_id_centru FROM CENTRU WHERE ROWNUM = 1 ORDER BY DBMS_RANDOM.VALUE; 
+	SELECT nrC INTO v_nrC FROM CLIENT WHERE ROWNUM = 1 ORDER BY DBMS_RANDOM.VALUE; 
+    v_id_donatie := seq_id_donatie.NEXTVAL; 
+ 
+	INSERT INTO DONATIE 
+    	(id_donatie, id_centru, nrC, data_donatie, suma) 
+	VALUES 
+    	(seq_id_donatie.NEXTVAL, v_id_centru, v_nrC, TO_DATE('2021-02-08', 'YYYY-MM-DD'), 45); 
+    END; 
+/
+
+DECLARE 
+    v_id_donatie NUMBER; 
+    v_id_centru NUMBER; 
+    v_nrC NUMBER; 
+BEGIN 
+	SELECT id_centru INTO v_id_centru FROM CENTRU WHERE ROWNUM = 1 ORDER BY DBMS_RANDOM.VALUE; 
+	SELECT nrC INTO v_nrC FROM CLIENT WHERE ROWNUM = 1 ORDER BY DBMS_RANDOM.VALUE; 
+    v_id_donatie := seq_id_donatie.NEXTVAL; 
+ 
+	INSERT INTO DONATIE 
+    	(id_donatie, id_centru, nrC, data_donatie, suma) 
+	VALUES 
+    	(seq_id_donatie.NEXTVAL, v_id_centru, v_nrC, TO_DATE('2022-07-19', 'YYYY-MM-DD'), 100); 
+     
+END; 
+/
+
+INSERT INTO DONATIE 
+    (id_donatie, id_centru, nrC, data_donatie, suma) 
+VALUES 
+    (seq_id_donatie.NEXTVAL, 102, 2, TO_DATE('2023-08-29', 'YYYY-MM-DD'), 200);
+
+INSERT INTO DONATIE 
+    (id_donatie, id_centru, nrC, data_donatie, suma) 
+VALUES 
+    (seq_id_donatie.NEXTVAL, 106, 4, TO_DATE('2023-08-30', 'YYYY-MM-DD'), 75);
+
+INSERT INTO DONATIE 
+    (id_donatie, id_centru, nrC, data_donatie, suma) 
+VALUES 
+    (seq_id_donatie.NEXTVAL, 103, 3, TO_DATE('2023-08-31', 'YYYY-MM-DD'), 120);
+
+INSERT INTO DONATIE 
+    (id_donatie, id_centru, nrC, data_donatie, suma) 
+VALUES 
+    (seq_id_donatie.NEXTVAL, 105, 1, TO_DATE('2023-09-01', 'YYYY-MM-DD'), 90);
+
+INSERT INTO DONATIE 
+    (id_donatie, id_centru, nrC, data_donatie, suma) 
+VALUES 
+    (seq_id_donatie.NEXTVAL, 101, 4, TO_DATE('2023-09-02', 'YYYY-MM-DD'), 150);
+
+
+
+CREATE SEQUENCE seq_id_contract 
+    INCREMENT BY 1 
+    START WITH 250 
+    MINVALUE 1 
+    MAXVALUE 50000 
+    NOCYCLE;
+
+
+
+DECLARE
+
+	TYPE DateAdoptieType IS TABLE OF DATE INDEX BY PLS_INTEGER;
+	TYPE NotAdoptedType IS TABLE OF ANIMAL_COMPANIE%ROWTYPE;
+
+	v_notAdopted NotAdoptedType;
+
+	v_id_contract NUMBER;
+	v_petID NUMBER;
+	v_nrC NUMBER;
+
+	v_date_adoptie DateAdoptieType;
+	v_random_data DATE;
+	v_randomIndex NUMBER;
+	v_counter NUMBER := 0;
+BEGIN
+    	v_date_adoptie(1) := TO_DATE('2023-10-10', 'YYYY-MM-DD');
+    	v_date_adoptie(2) := TO_DATE('2023-10-11', 'YYYY-MM-DD');
+    	v_date_adoptie(3) := TO_DATE('2023-10-12', 'YYYY-MM-DD');
+    	v_date_adoptie(4) := TO_DATE('2023-10-13', 'YYYY-MM-DD');
+    	v_date_adoptie(5) := TO_DATE('2023-10-14', 'YYYY-MM-DD');
+    	v_date_adoptie(6) := TO_DATE('2023-10-15', 'YYYY-MM-DD');
+    	v_date_adoptie(7) := TO_DATE('2023-10-16', 'YYYY-MM-DD');
+    	v_date_adoptie(8) := TO_DATE('2023-10-17', 'YYYY-MM-DD');
+    	v_date_adoptie(9) := TO_DATE('2023-10-18', 'YYYY-MM-DD');
+	v_date_adoptie(10) := TO_DATE('2023-10-19', 'YYYY-MM-DD');
+
+	SELECT *
+	BULK COLLECT INTO v_notAdopted
+	FROM ANIMAL_COMPANIE
+	WHERE adoptat = 'NU';
+
+	WHILE v_counter < 6 LOOP
+
+		v_random_data := v_date_adoptie(DBMS_RANDOM.VALUE(1,10));
+
+		v_randomIndex := TRUNC(DBMS_RANDOM.VALUE(1, v_notAdopted.COUNT + 1));
+		v_petID := v_notAdopted(v_randomIndex).petID;	
+		v_notAdopted.DELETE(v_randomIndex);
+
+		UPDATE ANIMAL_COMPANIE
+		SET adoptat = 'DA'
+		WHERE petID = v_petID;	
+
+		SELECT nrC INTO v_nrC FROM CLIENT WHERE ROWNUM = 1 ORDER BY DBMS_RANDOM.VALUE;
+			
+		INSERT INTO CONTRACT_ADOPTIE
+			(id_contract, petID, nrC, data_adoptie)
+		VALUES
+			(seq_id_contract.NEXTVAL, v_petID, v_nrC, v_random_data);
+
+
+		v_counter := v_counter + 1;
+	END LOOP;
+
+END;
+/
+
+
+CREATE SEQUENCE seq_id_angajat
+START WITH 250
+INCREMENT BY 1
+NOCACHE
+NOCYCLE;
+
+
+DECLARE
+    v_id_angajat NUMBER;
+    v_id_centru NUMBER;
+    v_nume VARCHAR2(20);
+    v_prenume VARCHAR2(50);
+    v_telefon VARCHAR2(20);
+    v_data_angajare DATE;
+    v_ore_saptamana NUMBER;
+    v_salariu NUMBER;
+BEGIN
+    FOR i IN 1..15 LOOP
+        v_id_angajat := seq_id_angajat.NEXTVAL;
+        v_id_centru := TRUNC(DBMS_RANDOM.VALUE(100, 105)); 
+        v_nume := 'Nume' || i;
+        v_prenume := 'Prenume' || i;
+        v_telefon := '07' || TRUNC(DBMS_RANDOM.VALUE(100000000, 999999999)); 
+        v_data_angajare := SYSDATE - TRUNC(DBMS_RANDOM.VALUE(30, 365)); 
+        v_ore_saptamana := TRUNC(DBMS_RANDOM.VALUE(20, 40)); 
+        v_salariu := TRUNC(DBMS_RANDOM.VALUE(2000, 5000)); 
+
+        INSERT INTO ANGAJAT(id_angajat, id_centru, nume, prenume, telefon, data_angajare, ore_saptamana, salariu)
+        VALUES (v_id_angajat, v_id_centru, v_nume, v_prenume, v_telefon, v_data_angajare, v_ore_saptamana, v_salariu);
+    END LOOP;
+END;
+/
+
+
+
+
+
+    ------------------------------------------------------- Exercitiul 6 -------------------------------------------------------
+/*
+Clientii "Star" sunt clientii care au donat, au planificat o vizita si au adoptat. 
+Retinand in 3 tipuri diferite de colectii de date id-urile clientilor din tabela de donatie, 
+planificare_vizita si contract_adoptie, voi afisa pe ecran cati clienti "Star" avem
+    Raspuns: 1
+*/
+
+    
+CREATE OR REPLACE PROCEDURE Exercitiul6 IS
+    TYPE DonatieType IS TABLE OF NUMBER INDEX BY PLS_INTEGER;
+    TYPE VizitaType IS TABLE OF NUMBER;
+    TYPE AdoptieType IS VARRAY(50) OF NUMBER;
+
+	TYPE DetaliiType IS RECORD (
+        nume CLIENT.nume%TYPE,
+        prenume CLIENT.prenume%TYPE
+    );
+
+    v_detalii DetaliiType;
+
+    v_donatii DonatieType;
+    v_vizite VizitaType := VizitaType();
+    v_adoptii AdoptieType := AdoptieType();
+
+	v_nrC NUMBER;
+
+    v_star_clients NUMBER := 0;
+BEGIN
+    
+    SELECT DISTINCT nrC
+    BULK COLLECT INTO v_donatii
+    FROM DONATIE;
+
+    FOR i IN (SELECT DISTINCT nrC FROM PROGRAMARE_VIZITA) LOOP
+        v_vizite.EXTEND;
+        v_vizite(v_vizite.LAST) := i.nrC;
+    END LOOP;
+
+	 FOR i IN (SELECT DISTINCT nrC FROM CONTRACT_ADOPTIE) LOOP
+        v_adoptii.EXTEND;
+        v_adoptii(v_adoptii.LAST) := i.nrC;
+     END LOOP;
+    
+    FOR i IN (SELECT DISTINCT nrC FROM CLIENT) LOOP
+        v_nrC := i.nrC;
+
+        -- Vedem daca nrC exista in toate cele trei colectii
+        IF v_donatii.EXISTS(v_nrC) AND v_vizite.EXISTS(v_nrC) AND v_adoptii.EXISTS(v_nrC) THEN
+            
+            SELECT nume, prenume INTO v_detalii.nume, v_detalii.prenume
+			FROM CLIENT
+			WHERE nrC = v_nrC;
+
+			DBMS_OUTPUT.PUT_LINE('Client ' || v_nrC || ', ' || v_detalii.nume || ' ' || v_detalii.prenume ||' este un Star Client!');
+
+            v_star_clients := v_star_clients + 1;
+        END IF;
+    END LOOP;
+
+    DBMS_OUTPUT.PUT_LINE('Numar total de Star Clients: ' || v_star_clients);
+END Exercitiul6;
+/
+
+    
+-- Apelul subprogramului:
+
+BEGIN
+	Exercitiul6;
+END;
+/
+
+
+
+    ------------------------------------------------------- Exercitiul 7 -------------------------------------------------------
+
+CREATE OR REPLACE PROCEDURE CalculSumaDonatii IS
+    -- Cursorul implicit pentru centre
+    CURSOR centru_cursor IS
+        SELECT id_centru, adresa FROM CENTRU;
+
+    -- Cursorul pentru donatii
+    CURSOR donatie_cursor (p_id_centru_donatie NUMBER) IS
+        SELECT suma FROM DONATIE
+        WHERE id_centru = p_id_centru_donatie;
+
+    v_id_centru CENTRU.id_centru%TYPE;
+    v_adresa_centru CENTRU.adresa%TYPE;
+    v_suma_totala NUMBER := 0;
+    v_suma_donatie NUMBER;
+BEGIN
+    OPEN centru_cursor;
+    LOOP
+        FETCH centru_cursor INTO v_id_centru, v_adresa_centru;
+        EXIT WHEN centru_cursor%NOTFOUND;
+
+-----------------
+        OPEN donatie_cursor(v_id_centru);
+        LOOP
+            FETCH donatie_cursor INTO v_suma_donatie;
+            EXIT WHEN donatie_cursor%NOTFOUND;
+
+            v_suma_totala := v_suma_totala + v_suma_donatie;
+        END LOOP;
+        CLOSE donatie_cursor;
+
+        DBMS_OUTPUT.PUT_LINE('Centrul cu adresa: ' || v_adresa_centru);
+        DBMS_OUTPUT.PUT_LINE('Suma totală donată: ' || v_suma_totala);
+        
+        v_suma_totala := 0;
+    END LOOP;
+    CLOSE centru_cursor;
+END CalculSumaDonatii;
+/
+
+select * from donatie;
+    
+BEGIN
+    CalculSumaDonatii();
+END;
+/
+
+
+
+
+    ------------------------------------------------------- Exercitiul 8 -------------------------------------------------------
+
+    
+
+CREATE OR REPLACE PROCEDURE ProgramareTur(
+    p_nume CLIENT.nume%TYPE,
+    p_prenume CLIENT.prenume%TYPE,
+    p_telefon CLIENT.telefon%TYPE,
+    p_id_centru NUMBER,
+    p_nr_persoane PROGRAMARE_VIZITA.nr_pers%TYPE,
+    p_ora_inceput NUMBER,
+    p_ora_final NUMBER
+) IS
+    v_nrC CLIENT.nrC%TYPE;
+    v_id_prog PROGRAMARE_VIZITA.id_prog%TYPE;
+    v_data_tur TUR.data_tur%TYPE;
+    v_durata_tur NUMBER;
+	v_aux VARCHAR(20);
+	v_verif NUMBER;
+	
+
+	FORMAT_INVALID EXCEPTION;
+	PRAGMA EXCEPTION_INIT(FORMAT_INVALID, -2292);
+
+	DURATA_DEPASITA EXCEPTION;
+	PRAGMA EXCEPTION_INIT(DURATA_DEPASITA, -2293);  -- folosesc pe toate 3 tabelele
+
+BEGIN
+	
+	-- Verificam daca centrul exista
+	SELECT 1
+    INTO v_verif
+    FROM CENTRU
+    WHERE id_centru = p_id_centru;
+    
+
+	BEGIN
+    	-- Se verifica daca clientul este deja in tabelul client
+    	SELECT nrC INTO v_nrC
+    	FROM CLIENT
+    	WHERE nume = p_nume AND prenume = p_prenume AND telefon = p_telefon;
+
+		EXCEPTION
+		WHEN NO_DATA_FOUND THEN
+			v_nrC := seq_nrC.NEXTVAL;
+			INSERT INTO CLIENT(nrC, nume, prenume, telefon)
+        	VALUES (v_nrC, p_nume, p_prenume, p_telefon);
+
+	END;
+
+    IF p_ora_inceput > p_ora_final THEN
+        RAISE FORMAT_INVALID;
+    END IF;
+
+    v_durata_tur := p_ora_final - p_ora_inceput;
+
+    IF v_durata_tur > 3 THEN
+        RAISE DURATA_DEPASITA;
+    END IF;
+
+    v_id_prog := seq_id_prog.NEXTVAL;
+
+    INSERT INTO PROGRAMARE_VIZITA(id_prog, nrC, nr_pers)
+    VALUES (v_id_prog, v_nrC, p_nr_persoane);
+
+	v_aux := TO_CHAR(p_ora_inceput) || '-' || TO_CHAR(p_ora_final);
+
+    INSERT INTO TUR(id_prog, id_centru, data_tur, interval_orar)
+    VALUES (v_id_prog, p_id_centru, SYSDATE, v_aux);
+
+    DBMS_OUTPUT.PUT_LINE('Programare pentru tur realizată cu succes!');
+
+EXCEPTION
+    WHEN NO_DATA_FOUND THEN
+            DBMS_OUTPUT.PUT_LINE('Id_centru NU există în tabela CENTRU.');
+    WHEN FORMAT_INVALID THEN
+        DBMS_OUTPUT.PUT_LINE('Eroare: ' || 'Ora de final nu poate fi precedentă orei de început.');
+    WHEN DURATA_DEPASITA THEN
+        DBMS_OUTPUT.PUT_LINE('Eroare: ' || 'Durata turului nu poate depăși 3 ore.');
+    WHEN OTHERS THEN
+        DBMS_OUTPUT.PUT_LINE('Eroare necunoscută. ' || SQLCODE);
+
+END;
+/
+
+-- Apel cu client nou, fara eroare:
+BEGIN
+	ProgramareTur('Toma', 'Alex', '0777227722', 102, 3, 11, 13);
+END;
+/
+
+-- Apel cu client nou, cu eroare la id_centru:
+BEGIN
+	ProgramareTur('Toma', 'Alex', '0777227722', 202, 3, 11, 13);
+END;
+/
+
+    
+-- Apel cu client nou, cu eroare la durata turului:
+BEGIN
+	ProgramareTur('Ion', 'Mihnea', '0733333332', 104, 3, 8, 13);
+END;
+/
+    
+-- Apel cu client nou, cu eroare la orele de inceput si final ale turului:
+BEGIN
+	ProgramareTur('Calin', 'Anca', '0735533332', 104, 2, 10, 8);
+END;
+/
+    
+ROLLBACK;
+
+
+
+
+
+
+
+    ------------------------------------------------------- Exercitiul 9 -------------------------------------------------------
+
+/*
+	Avem un grup de clienti care vor specific sa adopte animalutele cu cea mai mare varsta
+		din centrul cel mai apropiat (se da id-ul centrului).
+	Sa se creeze un nou contract de adoptie pentru animalutul cu varsta cea mai mare.
+	Tabele folosite: CLIENT, CONTRACT_ADOPTIE, CENTRU, ANIMAL_COMPANIE, FISA_AC.
+
+*/
+
+CREATE OR REPLACE PROCEDURE Exercitiul9(
+    p_nume_client IN VARCHAR2,
+    p_prenume_client IN VARCHAR2,
+    p_telefon_client IN VARCHAR2,
+    p_adresa_client IN VARCHAR2,
+    p_email_client IN VARCHAR2,
+    p_id_centru IN NUMBER
+) AS
+    v_nrC CLIENT.nrC%TYPE;
+    v_petID ANIMAL_COMPANIE.petID%TYPE;
+    v_id_contract CONTRACT_ADOPTIE.id_contract%TYPE;
+	v_count NUMBER;
+	
+BEGIN
+
+    
+    	SELECT COUNT(*)
+    	INTO v_count
+    	FROM ANIMAL_COMPANIE
+    	WHERE id_centru = p_id_centru;
+
+    	IF v_count = 0 THEN -----
+        	RAISE_APPLICATION_ERROR(-20001, 'Nu s-au gasit animale de companie in centrul specificat. :( ');
+    	END IF;
+
+		SELECT seq_nrC.NEXTVAL INTO v_nrC FROM DUAL;
+
+        INSERT INTO CLIENT(nrC, nume, prenume, telefon, adresa, email)
+        VALUES (v_nrC, p_nume_client, p_prenume_client, p_telefon_client, p_adresa_client, p_email_client);
+    
+
+    SELECT petID INTO v_petID
+    FROM (
+        SELECT ac.petID
+        FROM ANIMAL_COMPANIE ac
+        JOIN FISA_AC fa ON ac.id_fisa = fa.id_fisa -- join pe cheia id_fisa
+        WHERE ac.id_centru = p_id_centru
+        ORDER BY fa.varsta DESC, ac.data_preluare ASC -- ord dupa varsta descendent si data_preluare ascendent (pentru stabilitate)
+    )
+    WHERE ROWNUM = 1;
+
+
+    SELECT seq_id_contract.NEXTVAL INTO v_id_contract FROM DUAL;
+
+    INSERT INTO CONTRACT_ADOPTIE(id_contract, petID, nrC, data_adoptie)
+    VALUES (v_id_contract, v_petID, v_nrC, SYSDATE);
+
+    DBMS_OUTPUT.PUT_LINE('Contract de adoptie creat cu succes pentru clientul ' || p_nume_client || ' ' || p_prenume_client || ' si animalul de companie cu ID-ul ' || v_petID);
+EXCEPTION
+    WHEN TOO_MANY_ROWS THEN
+        DBMS_OUTPUT.PUT_LINE('Eroare: Prea multe rânduri returnate în subinterogare.');
+    WHEN OTHERS THEN
+        DBMS_OUTPUT.PUT_LINE('Eroare: ' || SQLERRM);
+END;
+/
+
+BEGIN
+    Exercitiul9(
+        'Popescu',
+        'Maria',
+        '0721122334',
+        'Str. Florilor nr. 10',
+        'popescu.maria@example.com',
+        100
+    );
+END;
+/
+
+	-- Verificare: OK
+select varsta, c.petID, c.id_centru
+from fisa_ac f, animal_companie c, centru cc
+where f.id_fisa = c.id_fisa
+    and c.id_centru = cc.id_centru
+    and cc.id_centru = 100;
+
+--ROLLBACK;
+
+
+    ------------------------------------------------------- Exercitiul 10 -------------------------------------------------------
+
+CREATE OR REPLACE TRIGGER trg_LMD_Donatie 
+AFTER INSERT OR DELETE ON DONATIE 
+FOR EACH ROW 
+ENABLE 
+DECLARE 
+    v_op_tip VARCHAR2(10); 
+BEGIN 
+    IF INSERTING THEN 
+        v_op_tip := 'INSERT'; 
+    ELSIF DELETING THEN 
+        v_op_tip := 'DELETE'; 
+    END IF; 
+ 
+    DBMS_OUTPUT.PUT_LINE('Operație ' || v_op_tip || ' asupra donației cu ID: ' || :OLD.id_donatie); 
+END; 
+
+
+-- Exemplu:
+
+DECLARE  
+    v_id_donatie NUMBER;  
+    v_id_centru NUMBER;  
+    v_nrC NUMBER;  
+BEGIN  
+	SELECT id_centru INTO v_id_centru FROM CENTRU WHERE ROWNUM = 1 ORDER BY DBMS_RANDOM.VALUE;  
+	SELECT nrC INTO v_nrC FROM CLIENT WHERE ROWNUM = 1 ORDER BY DBMS_RANDOM.VALUE;  
+    v_id_donatie := seq_id_donatie.NEXTVAL;  
+  
+	INSERT INTO DONATIE  
+    	(id_donatie, id_centru, nrC, data_donatie, suma)  
+	VALUES  
+    	(seq_id_donatie.NEXTVAL, v_id_centru, v_nrC, TO_DATE('2022-09-30', 'YYYY-MM-DD'), 45);  
+    END;  
+
+
+    ------------------------------------------------------- Exercitiul 11 -------------------------------------------------------
+
+CREATE OR REPLACE TRIGGER trg_LMD_Donatie 
+AFTER INSERT OR DELETE ON DONATIE 
+FOR EACH ROW 
+ENABLE 
+DECLARE 
+    v_op_tip VARCHAR2(10); 
+BEGIN 
+    IF INSERTING THEN 
+        v_op_tip := 'INSERT'; 
+    ELSIF DELETING THEN 
+        v_op_tip := 'DELETE'; 
+    END IF; 
+ 
+    DBMS_OUTPUT.PUT_LINE('Operație ' || v_op_tip || ' asupra tabelului donatie'); 
+END; 
+
+-- Exemplu:
+
+DECLARE  
+    v_id_donatie NUMBER;  
+    v_id_centru NUMBER;  
+    v_nrC NUMBER;  
+BEGIN  
+	SELECT id_centru INTO v_id_centru FROM CENTRU WHERE ROWNUM = 1 ORDER BY DBMS_RANDOM.VALUE;  
+	SELECT nrC INTO v_nrC FROM CLIENT WHERE ROWNUM = 1 ORDER BY DBMS_RANDOM.VALUE;  
+    v_id_donatie := seq_id_donatie.NEXTVAL;  
+  
+	INSERT INTO DONATIE  
+    	(id_donatie, id_centru, nrC, data_donatie, suma)  
+	VALUES  
+    	(seq_id_donatie.NEXTVAL, v_id_centru, v_nrC, TO_DATE('2022-09-30', 'YYYY-MM-DD'), 45);  
+    END;  
+
+
+    ------------------------------------------------------- Exercitiul 12 -------------------------------------------------------
+
+CREATE OR REPLACE TRIGGER trg_LDD_Donatie 
+BEFORE DELETE ON DONATIE 
+FOR EACH ROW 
+BEGIN 
+    DBMS_OUTPUT.PUT_LINE('Stergere donație cu id ' || :OLD.id_donatie || ' inainte de ștergere.'); 
+ 
+END; 
+
+
+-- Exemplu:
+
+DELETE FROM DONATIE WHERE id_donatie = 404
+
